@@ -9,7 +9,7 @@ COPY . .
 
 # Actualiza pip e instala dependencias necesarias
 RUN pip install --upgrade pip
-RUN pip install discord.py flask gunicorn
+RUN pip install discord.py flask gunicorn dotenv
 
 # Mantén los logs visibles en tiempo real
 ENV PYTHONUNBUFFERED=1
