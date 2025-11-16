@@ -34,6 +34,17 @@ class BanView(ui.View):
     @ui.button(label="Enviar baneo", style=discord.ButtonStyle.danger)
     async def send_ban(self, interaction: discord.Interaction, button: ui.Button):
         try:
+            # Intentar enviar DM con la razón
+            dm_message = f"Has sido baneado de {self.guild.name}.\nRazón: {self.reason}"
+            try:
+                if isinstance(self.target, discord.Member):
+                    await self.target.send(dm_message)
+                elif isinstance(self.target, discord.User):
+                    await self.target.send(dm_message)
+            except Exception:
+                pass  # No se puede enviar DM
+
+            # Banear
             await self.guild.ban(self.target, reason=self.reason, delete_message_days=1)
             await interaction.response.send_message(f"✅ Usuario `{self.target}` baneado.\nRazón: {self.reason}")
         except Exception as err:
@@ -43,7 +54,7 @@ class BanView(ui.View):
     async def regenerate_reason(self, interaction: discord.Interaction, button: ui.Button):
         new_reason = groq_ban_reason()
         self.reason = new_reason
-        await interaction.response.edit_message(content=f"Razón generada por IA:\n{new_reason}", view=self)
+        await interaction.response.edit_message(content=f"Razón generada:\n{new_reason}", view=self)
 
 def get_user(ctx, identifier):
     if identifier.isdigit():
