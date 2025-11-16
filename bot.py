@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import ui
 from groq import Groq
 import os
+import json
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -10,7 +11,12 @@ intents.members = True
 
 ROLE_ALLOWED = 1329516197175103651
 
-bot = commands.Bot(command_prefix="%", intents=intents)
+# Solicita el bot_id al iniciar
+BOT_ID = input("Ingresa el ID del bot: ").strip()
+if not BOT_ID.isdigit():
+    raise ValueError("El ID del bot debe ser un número.")
+
+bot = commands.Bot(command_prefix="%", intents=intents, self_bot=False)
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 def groq_ban_reason(user_input):
@@ -28,68 +34,88 @@ def groq_ban_reason(user_input):
         stream=False
     )
     ia_reason = completion.choices[0].message.content.strip()
-    # Control antirrepetición directa (por si la IA no lo parafrasea)
     if ia_reason.lower().strip() == user_input.lower().strip():
         ia_reason = "Incumplimiento de normas comunitarias detectado y comportamiento que sugiere riesgo para la seguridad del servidor."
     return ia_reason
 
-class BanView(ui.View):
-    def __init__(self, target_id, target_user, reason, guild):
+class BanMultipleView(ui.View):
+    def __init__(self, users, guild, reason):
         super().__init__()
-        self.target_id = target_id
-        self.target_user = target_user
-        self.reason = reason
+        self.users = users
         self.guild = guild
+        self.reason = reason
 
-    @ui.button(label="Enviar baneo", style=discord.ButtonStyle.danger)
-    async def send_ban(self, interaction: discord.Interaction, button: ui.Button):
-        try:
-            # Notificar por DM si está en el servidor
-            if self.target_user:
-                dm_message = f"Has sido baneado de {self.guild.name}.\nRazón: {self.reason}"
-                try:
-                    await self.target_user.send(dm_message)
-                except Exception:
-                    pass
-            # Forceban real
-            await self.guild.ban(discord.Object(id=int(self.target_id)), reason=self.reason, delete_message_seconds=86400)
-            display = getattr(self.target_user, "mention", f"`{self.target_id}`")
-            await interaction.response.send_message(f"✅ Usuario {display} baneado.\nRazón: {self.reason}")
-        except Exception as err:
-            await interaction.response.send_message(f"❌ Error: {err}")
+    @ui.button(label="🚫 Banear usuarios", style=discord.ButtonStyle.danger)
+    async def ban_users(self, interaction: discord.Interaction, button: ui.Button):
+        banned = []
+        for user_id, username in self.users:
+            try:
+                member = self.guild.get_member(int(user_id))
+                if member:
+                    await self.guild.ban(member, reason=self.reason, delete_message_seconds=86400)
+                    banned.append(f"{username} ({user_id})")
+            except Exception as e:
+                print(f"Error al banear {username} ({user_id}): {e}")
+        await interaction.response.send_message(f"✅ Usuarios baneados: {', '.join(banned)}")
 
-    @ui.button(label="Regenerar razón", style=discord.ButtonStyle.secondary)
-    async def regenerate_reason(self, interaction: discord.Interaction, button: ui.Button):
-        new_reason = groq_ban_reason(self.reason)
-        self.reason = new_reason
-        await interaction.response.edit_message(content=f"Razón sugerida:\n{new_reason}", view=self)
-
-def get_user_and_id(ctx, identifier):
-    if identifier.isdigit():
-        member = ctx.guild.get_member(int(identifier))
-        return identifier, member
-    if identifier.startswith("<@") and identifier.endswith(">"):
-        idnum = identifier.replace("<@", "").replace(">", "")
-        member = ctx.guild.get_member(int(idnum))
-        return idnum, member
-    return identifier, None
+    @ui.button(label="🎭 No banear a los usuarios que están aquí", style=discord.ButtonStyle.secondary)
+    async def skip_present(self, interaction: discord.Interaction, button: ui.Button):
+        filtered = []
+        for user_id, username in self.users:
+            member = self.guild.get_member(int(user_id))
+            if not member:
+                filtered.append(f"{username} ({user_id})")
+        if filtered:
+            await interaction.response.send_message(f"✅ Usuarios no baneados (no estaban en el servidor): {', '.join(filtered)}")
+        else:
+            await interaction.response.send_message("✅ No hay usuarios en el archivo que no estén en el servidor.")
 
 @bot.command()
-async def ban(ctx, user_ref: str, *, reason: str = None):
+async def banear_multiple(ctx, attachment: discord.Attachment):
     if not any(r.id == ROLE_ALLOWED for r in ctx.author.roles):
         await ctx.send("⛔ No tienes acceso a este comando.")
         return
-    target_id, target_user = get_user_and_id(ctx, user_ref)
-    if not target_id.isdigit():
-        await ctx.send("❓ No se pudo identificar el usuario. Usa ID o mención.")
+
+    if not attachment.filename.endswith('.json'):
+        await ctx.send("❌ Solo se aceptan archivos JSON.")
         return
-    mot = groq_ban_reason(reason or "")
-    view = BanView(target_id, target_user, mot, ctx.guild)
-    display = getattr(target_user, "mention", f"`{target_id}`")
-    await ctx.send(f"Confirmar baneo a {display}.\nRazón:\n{mot}", view=view)
+
+    try:
+        content = await attachment.read()
+        data = json.loads(content)
+        users = [(user['id'], user['username']) for user in data if 'id' in user and 'username' in user]
+        if not users:
+            await ctx.send("❌ No se encontraron usuarios en el archivo.")
+            return
+
+        present = []
+        not_present = []
+        for user_id, username in users:
+            member = ctx.guild.get_member(int(user_id))
+            if member:
+                present.append(f"{username} ({user_id}) ⚠️ está en el servidor")
+            else:
+                not_present.append(f"{username} ({user_id})")
+
+        embed = discord.Embed(
+            title="⚠️ Usuarios a banear",
+            description="Los siguientes usuarios serán baneados:",
+            color=discord.Color.orange()
+        )
+        if present:
+            embed.add_field(name="⚠️ Están en el servidor", value="\n".join(present), inline=False)
+        if not_present:
+            embed.add_field(name="✅ No están en el servidor", value="\n".join(not_present), inline=False)
+
+        view = BanMultipleView(users, ctx.guild, groq_ban_reason(""))
+        await ctx.send(embed=embed, view=view)
+    except Exception as e:
+        await ctx.send(f"❌ Error al procesar el archivo: {e}")
 
 @bot.event
 async def on_ready():
     print(f"{bot.user} está en línea.")
+    # Actualiza los comandos
+    await bot.tree.sync()
 
 bot.run(os.getenv("DISCORD_TOKEN"))
