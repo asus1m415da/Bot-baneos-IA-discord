@@ -25,10 +25,12 @@ intents.guilds = True
 class MiBotBaneos(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=intents)
-        self.application_id = int(BOT_ID)
+        # No asignar application_id aquí
+        # El bot lo obtiene automáticamente del token
     
     async def setup_hook(self):
         # Registrar comandos con el BOT_ID
+        # El bot ya conoce su application_id por el token
         await self.tree.sync()
         print(f'✅ Comandos sincronizados con BOT_ID: {self.application_id}')
 
