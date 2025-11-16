@@ -1,222 +1,279 @@
 import discord
+from discord import app_commands
 from discord.ext import commands
-import threading
-import secrets
-import os
 import json
-import queue
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session
+import os
+from dotenv import load_dotenv
 
+# Cargar variables de entorno desde .env
+load_dotenv()
+
+# Variables de entorno requeridas
+DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+BOT_ID = os.getenv('BOT_ID')
+
+if not DISCORD_TOKEN:
+    raise EnvironmentError("❌ DISCORD_TOKEN no encontrado. Define la variable de entorno.")
+if not BOT_ID:
+    raise EnvironmentError("❌ BOT_ID no encontrado. Define la variable de entorno.")
+
+# Configuración del bot
 intents = discord.Intents.default()
-intents.message_content = True
 intents.members = True
+intents.guilds = True
 
-ROLE_ALLOWED = 1329516197175103651
+class MiBotBaneos(commands.Bot):
+    def __init__(self):
+        super().__init__(command_prefix="!", intents=intents)
+        self.application_id = int(BOT_ID)
+    
+    async def setup_hook(self):
+        # Registrar comandos con el BOT_ID
+        await self.tree.sync()
+        print(f'✅ Comandos sincronizados con BOT_ID: {self.application_id}')
 
-BOT_ID = os.getenv("BOT_ID") or "123456789012345678"
-
-bot = commands.Bot(command_prefix="%", intents=intents, self_bot=False)
-app = Flask(__name__, template_folder="templates")
-app.secret_key = secrets.token_urlsafe(32)  # Necesario para sesiones
-
-session_keys = {}  # key -> user_id
-ban_queue = queue.Queue()
-
-def generate_key():
-    return secrets.token_urlsafe(72)[:98]
-
-@bot.command()
-async def generar_key(ctx):
-    if not any(r.id == ROLE_ALLOWED for r in ctx.author.roles):
-        await ctx.send("⛔ No tienes acceso a este comando.")
-        return
-    key = generate_key()
-    session_keys[key] = ctx.author.id
-    await ctx.send(f"🔑 Tu clave única es: `{key}`")
-
-@bot.command()
-async def ver_users(ctx):
-    if not any(r.id == ROLE_ALLOWED for r in ctx.author.roles):
-        await ctx.send("⛔ No tienes acceso a este comando.")
-        return
-    user_list = []
-    for key, user_id in session_keys.items():
-        user = bot.get_user(user_id)
-        if user:
-            user_list.append(f"{user.name} (`{key}`)")
-        else:
-            user_list.append(f"{user_id} (`{key}`)")
-    await ctx.send("Usuarios y sus claves generadas:\n" + "\n".join(user_list))
-
-@bot.command()
-async def ban(ctx, user_ref: str, *, reason: str = "No reason provided"):
-    if not any(r.id == ROLE_ALLOWED for r in ctx.author.roles):
-        await ctx.send("⛔ No tienes acceso a este comando.")
-        return
-
-    member = None
-    if user_ref.isdigit():
-        member = ctx.guild.get_member(int(user_ref))
-    elif user_ref.startswith("<@") and user_ref.endswith(">"):
-        idnum = user_ref.replace("<@", "").replace(">", "")
-        member = ctx.guild.get_member(int(idnum))
-    if not member:
-        await ctx.send("❌ El usuario no está en el servidor.")
-        return
-
-    try:
-        await ctx.guild.ban(member, reason=reason, delete_message_seconds=86400)
-        await ctx.send(f"✅ Usuario {member.mention} baneado de forma manual.\nRazón: {reason}")
-    except Exception as e:
-        await ctx.send(f"❌ Error al banear: {e}")
-
-# --- FLASK WEB API PARA GUI ---
-
-@app.route('/')
-def index():
-    key = request.args.get('key')
-    if not key or key not in session_keys:
-        return redirect(url_for('login'))
-    session['key'] = key
-    return render_template("index.html")
-
-@app.route('/login')
-def login():
-    return '''
-    <h2>Ingresa tu clave para acceder</h2>
-    <form action="/check_key" method="POST">
-        <input type="text" name="key" placeholder="Ingresa tu clave" required>
-        <button type="submit">Acceder</button>
-    </form>
-    '''
-
-@app.route('/check_key', methods=['POST'])
-def check_key():
-    key = request.form.get('key')
-    if key in session_keys:
-        session['key'] = key
-        return redirect(url_for('index'))
-    return redirect(url_for('login'))
-
-@app.route('/api/servidores', methods=['GET'])
-def api_servidores():
-    if 'key' not in session or session['key'] not in session_keys:
-        return jsonify({"error": "Acceso denegado"}), 401
-    servidores = [
-        {"id": str(guild.id), "name": guild.name}
-        for guild in bot.guilds
-    ]
-    return jsonify(servidores)
-
-@app.route('/api/verificar_usuarios', methods=['POST'])
-def api_verificar_usuarios():
-    if 'key' not in session or session['key'] not in session_keys:
-        return jsonify({"error": "Acceso denegado"}), 401
-    data = request.get_json()
-    server_id = int(data.get("server_id"))
-    users = data.get("users", [])
-
-    guild = discord.utils.get(bot.guilds, id=server_id)
-    if not guild:
-        return jsonify({"error": "Servidor no encontrado"}), 404
-
-    result = []
-    for user in users:
-        user_id = int(user.get("id"))
-        username = user.get("username")
-        member = guild.get_member(user_id)
-        if member:
-            result.append({"username": username, "id": user_id, "status": "presente"})
-        else:
-            result.append({"username": username, "id": user_id, "status": "no presente"})
-
-    return jsonify(result)
-
-@app.route('/api/banear_json', methods=['POST'])
-def api_banear_json():
-    if 'key' not in session or session['key'] not in session_keys:
-        return jsonify({"error": "Acceso denegado"}), 401
-    data = request.get_json()
-    server_id = int(data.get("server_id"))
-    users = data.get("users", [])
-    reason = data.get("reason", "Ban desde dashboard")
-
-    guild = discord.utils.get(bot.guilds, id=server_id)
-    if not guild:
-        return jsonify({"error": "Servidor no encontrado"}), 404
-
-    result = []
-    for user in users:
-        user_id = int(user.get("id"))
-        username = user.get("username")
-        ban_queue.put({"guild_id": server_id, "user_id": user_id, "reason": reason})
-        result.append(username)
-
-    return jsonify({"message": f"{len(result)} usuarios enviados para banear.", "banned": result})
-
-@app.route('/api/banear_manual', methods=['POST'])
-def api_banear_manual():
-    if 'key' not in session or session['key'] not in session_keys:
-        return jsonify({"error": "Acceso denegado"}), 401
-    data = request.get_json()
-    server_id = int(data.get("server_id"))
-    user_ref = data.get("user")
-    reason = data.get("reason", "Ban manual desde dashboard")
-
-    user_id = None
-    if user_ref.isdigit():
-        user_id = int(user_ref)
-    elif user_ref and user_ref.startswith("<@") and user_ref.endswith(">"):
-        idnum = user_ref.replace("<@", "").replace(">", "")
-        if idnum.isdigit():
-            user_id = int(idnum)
-
-    if not user_id:
-        return jsonify({"error": "ID de usuario inválido"}), 400
-
-    ban_queue.put({"guild_id": server_id, "user_id": user_id, "reason": reason})
-    return jsonify({"message": f"Usuario {user_ref} enviado para banear."})
-
-# --- Tarea asíncrona de procesamiento de baneo ---
-import asyncio
-
-async def process_bans():
-    await bot.wait_until_ready()
-    while True:
-        try:
-            task = ban_queue.get(block=False)
-        except queue.Empty:
-            await asyncio.sleep(3)
-            continue
-
-        guild = discord.utils.get(bot.guilds, id=task["guild_id"])
-        if not guild:
-            continue
-
-        member = guild.get_member(task["user_id"])
-        if member:
-            try:
-                await guild.ban(member, reason=task["reason"], delete_message_seconds=86400)
-                print(f"Usuario {member.name} ({member.id}) baneado en {guild.name}")
-            except Exception as e:
-                print(f"Error banear {task['user_id']} en {guild.name}: {e}")
-        else:
-            try:
-                await guild.ban(discord.Object(id=task["user_id"]), reason=task["reason"], delete_message_seconds=86400)
-                print(f"Usuario {task['user_id']} forcebaneado en {guild.name}")
-            except Exception as e:
-                print(f"Error forceban {task['user_id']} en {guild.name}: {e}")
-
-        ban_queue.task_done()
+bot = MiBotBaneos()
 
 @bot.event
 async def on_ready():
-    print(f"{bot.user} está en línea.")
-    bot.loop.create_task(process_bans())
+    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    print(f'🤖 Bot conectado: {bot.user.name}')
+    print(f'🆔 Bot ID: {bot.user.id}')
+    print(f'🌐 Servidores: {len(bot.guilds)}')
+    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
 
-def run_bot():
-    bot.run(os.getenv("DISCORD_TOKEN"))
+@bot.tree.command(name="banear_json", description="🔨 Banea usuarios masivamente desde un archivo JSON")
+@app_commands.describe(archivo="📁 Archivo JSON con IDs de usuarios a banear")
+@app_commands.checks.has_permissions(ban_members=True)
+async def banear_json(interaction: discord.Interaction, archivo: discord.Attachment):
+    # Verificar extensión
+    if not archivo.filename.endswith('.json'):
+        embed = discord.Embed(
+            title="❌ Archivo Inválido",
+            description="Por favor sube un archivo con extensión **`.json`**",
+            color=0xED4245
+        )
+        embed.set_footer(text="Sistema de Baneos Masivos", icon_url=bot.user.display_avatar.url)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+    
+    # Embed de procesamiento
+    embed_procesando = discord.Embed(
+        title="⏳ Procesando Archivo",
+        description="📂 Analizando JSON y verificando usuarios en el servidor...",
+        color=0x5865F2
+    )
+    embed_procesando.add_field(
+        name="📊 Estado",
+        value="🔄 Leyendo archivo JSON\n🔍 Identificando usuarios\n⚙️ Preparando baneos",
+        inline=False
+    )
+    if archivo.url:
+        embed_procesando.set_thumbnail(url=archivo.url)
+    embed_procesando.set_footer(
+        text=f"Solicitado por {interaction.user.name}",
+        icon_url=interaction.user.display_avatar.url
+    )
+    embed_procesando.timestamp = discord.utils.utcnow()
+    
+    await interaction.response.send_message(embed=embed_procesando)
+    
+    try:
+        # Leer archivo JSON
+        contenido = await archivo.read()
+        datos = json.loads(contenido.decode('utf-8'))
+        
+        # Extraer IDs
+        user_ids = []
+        if isinstance(datos, list):
+            for item in datos:
+                if isinstance(item, dict):
+                    user_id = item.get('id') or item.get('user_id') or item.get('userId')
+                    if user_id:
+                        user_ids.append(int(user_id))
+                elif isinstance(item, (int, str)):
+                    user_ids.append(int(item))
+        elif isinstance(datos, dict):
+            usuarios = datos.get('users') or datos.get('user_ids') or datos.get('ids') or datos
+            if isinstance(usuarios, list):
+                for item in usuarios:
+                    if isinstance(item, (int, str)):
+                        user_ids.append(int(item))
+        
+        if not user_ids:
+            embed_error = discord.Embed(
+                title="❌ JSON Vacío o Inválido",
+                description="No se encontraron IDs válidos en el archivo.",
+                color=0xED4245
+            )
+            embed_error.add_field(
+                name="📝 Formatos Aceptados",
+                value="``````\n``````\n``````",
+                inline=False
+            )
+            embed_error.set_footer(text="Sistema de Baneos Masivos")
+            await interaction.edit_original_response(embed=embed_error)
+            return
+        
+        # Eliminar duplicados
+        user_ids = list(set(user_ids))
+        
+        # Separar usuarios
+        guild = interaction.guild
+        miembros_servidor = {member.id for member in guild.members}
+        
+        usuarios_en_servidor = []
+        usuarios_a_banear = []
+        
+        for user_id in user_ids:
+            if user_id in miembros_servidor:
+                usuarios_en_servidor.append(user_id)
+            else:
+                usuarios_a_banear.append(user_id)
+        
+        # Ejecutar baneos
+        baneados_exitosos = []
+        errores_baneo = []
+        
+        for user_id in usuarios_a_banear:
+            try:
+                await guild.ban(
+                    discord.Object(id=user_id),
+                    reason=f"Baneo masivo ejecutado por {interaction.user} ({interaction.user.id})"
+                )
+                baneados_exitosos.append(user_id)
+            except discord.Forbidden:
+                errores_baneo.append((user_id, "Sin permisos"))
+            except discord.HTTPException as e:
+                errores_baneo.append((user_id, f"Error HTTP: {e.status}"))
+        
+        # Determinar color y emoji del resultado
+        if baneados_exitosos and not usuarios_en_servidor:
+            color_final = 0x57F287  # Verde
+            emoji_titulo = "✅"
+        elif usuarios_en_servidor and baneados_exitosos:
+            color_final = 0xFEE75C  # Amarillo
+            emoji_titulo = "⚠️"
+        elif errores_baneo:
+            color_final = 0xE67E22  # Naranja
+            emoji_titulo = "⚡"
+        else:
+            color_final = 0x5865F2  # Blurple
+            emoji_titulo = "📋"
+        
+        embed_resultado = discord.Embed(
+            title=f"{emoji_titulo} Operación de Baneo Completada",
+            description="Proceso de baneo masivo ejecutado correctamente.",
+            color=color_final,
+            timestamp=discord.utils.utcnow()
+        )
+        
+        # Campo de usuarios en el servidor (PROTEGIDOS)
+        if usuarios_en_servidor:
+            usuarios_texto = ""
+            for i, uid in enumerate(usuarios_en_servidor[:8], 1):
+                try:
+                    member = guild.get_member(uid)
+                    if member:
+                        usuarios_texto += f"`{i}.` {member.mention} • `{uid}`\n"
+                    else:
+                        usuarios_texto += f"`{i}.` <@{uid}> • `{uid}`\n"
+                except Exception:
+                    usuarios_texto += f"`{i}.` <@{uid}> • `{uid}`\n"
+            
+            if len(usuarios_en_servidor) > 8:
+                usuarios_texto += f"\n`...` **+{len(usuarios_en_servidor) - 8} usuarios más**"
+            
+            embed_resultado.add_field(
+                name=f"🛡️ Protegidos en el Servidor • {len(usuarios_en_servidor)}",
+                value=usuarios_texto or "`Ninguno`",
+                inline=False
+            )
+        
+        # Campo de baneados exitosamente
+        if baneados_exitosos:
+            baneados_texto = ""
+            for i, uid in enumerate(baneados_exitosos[:8], 1):
+                baneados_texto += f"`{i}.` ID: `{uid}`\n"
+            
+            if len(baneados_exitosos) > 8:
+                baneados_texto += f"\n`...` **+{len(baneados_exitosos) - 8} usuarios más**"
+            
+            embed_resultado.add_field(
+                name=f"🔨 Baneados Exitosamente • {len(baneados_exitosos)}",
+                value=baneados_texto or "`Ninguno`",
+                inline=False
+            )
+        
+        # Campo de errores
+        if errores_baneo:
+            errores_texto = ""
+            for i, (uid, error) in enumerate(errores_baneo[:5], 1):
+                errores_texto += f"`{i}.` `{uid}` → {error}\n"
+            
+            if len(errores_baneo) > 5:
+                errores_texto += f"\n`...` **+{len(errores_baneo) - 5} errores más**"
+            
+            embed_resultado.add_field(
+                name=f"⚠️ Errores • {len(errores_baneo)}",
+                value=errores_texto or "`Ninguno`",
+                inline=False
+            )
+        
+        # Estadísticas finales (sin bloques de código)
+        estadisticas = (
+            f"Total en JSON: {len(user_ids)}\n"
+            f"Protegidos:    {len(usuarios_en_servidor)}\n"
+            f"Baneados:      {len(baneados_exitosos)}\n"
+            f"Errores:       {len(errores_baneo)}"
+        )
+        
+        embed_resultado.add_field(
+            name="📊 Estadísticas Finales",
+            value=estadisticas,
+            inline=False
+        )
+        
+        # Footer y thumbnail
+        embed_resultado.set_footer(
+            text=f"Ejecutado por {interaction.user.name} • Sistema de Baneos Masivos",
+            icon_url=interaction.user.display_avatar.url
+        )
+        
+        # Manejar thumbnail del servidor (puede ser None)
+        if guild.icon:
+            embed_resultado.set_thumbnail(url=guild.icon.url)
+        
+        await interaction.edit_original_response(embed=embed_resultado)
+        
+    except json.JSONDecodeError:
+        embed = discord.Embed(
+            title="❌ Error de Formato JSON",
+            description="El archivo no tiene un formato JSON válido.\n\n**Verifica:**\n• Comas entre elementos\n• Llaves y corchetes cerrados\n• Comillas dobles en strings",
+            color=0xED4245
+        )
+        embed.set_footer(text="Sistema de Baneos Masivos")
+        await interaction.edit_original_response(embed=embed)
+    except Exception as e:
+        embed = discord.Embed(
+            title="❌ Error Inesperado",
+            description=f"{type(e).__name__}: {str(e)}",
+            color=0xED4245
+        )
+        embed.set_footer(text="Sistema de Baneos Masivos")
+        await interaction.edit_original_response(embed=embed)
 
+@banear_json.error
+async def banear_json_error(interaction: discord.Interaction, error):
+    if isinstance(error, app_commands.MissingPermissions):
+        embed = discord.Embed(
+            title="🔒 Permisos Insuficientes",
+            description="Necesitas el permiso **`Banear Miembros`** para ejecutar este comando.",
+            color=0xED4245
+        )
+        embed.set_footer(text="Sistema de Baneos Masivos")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# Ejecutar bot
 if __name__ == "__main__":
-    threading.Thread(target=run_bot, daemon=True).start()
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    bot.run(DISCORD_TOKEN)
