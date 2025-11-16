@@ -11,10 +11,11 @@ intents.members = True
 
 ROLE_ALLOWED = 1329516197175103651
 
-# Solicita el bot_id al iniciar
-BOT_ID = input("Ingresa el ID del bot: ").strip()
-if not BOT_ID.isdigit():
-    raise ValueError("El ID del bot debe ser un número.")
+# Define el ID del bot como variable de entorno o directamente en el código
+BOT_ID = os.getenv("BOT_ID")
+if not BOT_ID:
+    # Si no está definido en variables de entorno, usa un valor por defecto o lanza un error
+    BOT_ID = "1399167339399741450"  # Reemplaza con el ID de tu bot
 
 bot = commands.Bot(command_prefix="%", intents=intents, self_bot=False)
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
