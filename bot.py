@@ -4,6 +4,7 @@ import os
 import json
 import secrets
 import asyncio
+from flask import Flask, render_template_string, request, jsonify
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -67,5 +68,169 @@ async def on_ready():
     print(f"{bot.user} está en línea.")
     await bot.tree.sync()
 
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    return render_template_string('''
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Banear Usuarios</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .header select {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: #007bff;
+            color: #fff;
+        }
+        .options {
+            display: flex;
+            gap: 20px;
+        }
+        .option {
+            flex: 1;
+            background-color: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+        }
+        .option h2 {
+            margin-top: 0;
+            color: #333;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+        }
+        input[type="text"], select, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: #fff;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Dashboard de Banear Usuarios</h1>
+            <select id="server">
+                <option value="1">Servidor 1</option>
+                <option value="2">Servidor 2</option>
+            </select>
+        </div>
+        <div class="options">
+            <div class="option">
+                <h2>Cargar JSON para Banear</h2>
+                <div class="form-group">
+                    <label for="json">Sube el archivo JSON:</label>
+                    <input type="file" id="json" accept=".json">
+                </div>
+                <button onclick="banearJson()">Banear</button>
+            </div>
+            <div class="option">
+                <h2>Banear Manualmente</h2>
+                <div class="form-group">
+                    <label for="user">Banear por ID o @usuario:</label>
+                    <input type="text" id="user" placeholder="Ingresa ID o @usuario">
+                </div>
+                <button onclick="banearManual()">Banear</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        function banearJson() {
+            const jsonFile = document.getElementById('json').files[0];
+            if (!jsonFile) {
+                alert('Por favor, sube un archivo JSON.');
+                return;
+            }
+            // Aquí iría la lógica para enviar la solicitud al bot
+            alert('Solicitud enviada. El bot procesará tu petición.');
+        }
+
+        function banearManual() {
+            const user = document.getElementById('user').value;
+            if (!user) {
+                alert('Por favor, ingresa un ID o @usuario.');
+                return;
+            }
+            // Aquí iría la lógica para enviar la solicitud al bot
+            alert('Solicitud enviada. El bot procesará tu petición.');
+        }
+    </script>
+</body>
+</html>
+    ''')
+
+@app.route('/banear', methods=['POST'])
+def banear():
+    data = request.json
+    key = data.get('key')
+    server = data.get('server')
+    users = data.get('users')
+    if key not in keys:
+        return jsonify({'error': 'Clave inválida'}), 400
+    # Aquí iría la lógica para banear usuarios
+    return jsonify({'message': 'Usuarios baneados'})
+
+@app.route('/banear_manual', methods=['POST'])
+def banear_manual():
+    data = request.json
+    key = data.get('key')
+    server = data.get('server')
+    user = data.get('user')
+    if key not in keys:
+        return jsonify({'error': 'Clave inválida'}), 400
+    # Aquí iría la lógica para banear manualmente
+    return jsonify({'message': 'Usuario baneado'})
+
 def run_bot():
     bot.run(os.getenv("DISCORD_TOKEN"))
+
+if __name__ == '__main__':
+    # Inicia el bot en un hilo separado
+    bot_thread = threading.Thread(target=run_bot)
+    bot_thread.start()
+    # Inicia la aplicación Flask
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
