@@ -1,1 +1,318 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Banear Usuarios</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700&display=swap" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <style>
+        :root {
+            --primary: #0040ff;
+            --accent: #f8fafc;
+            --danger: #ff0059;
+            --success: #13d981;
+            --border-radius: 12px;
+            --shadow: 0 5px 18px rgba(0,32,128,0.12);
+        }
 
+        body {
+            font-family: 'Montserrat', Arial, sans-serif;
+            background: linear-gradient(120deg, #f3f6fb 60%, #e9e9fc 100%);
+            min-height: 100vh;
+            color: #232148;
+            margin: 0;
+        }
+
+        .dashboard-container {
+            max-width: 1060px;
+            margin: 50px auto;
+            background-color: #fff;
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            padding: 40px 36px 32px 36px;
+            position: relative;
+        }
+
+        .header-flex {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 32px;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 2.55rem;
+            font-weight: 700;
+            margin-bottom: 0;
+            letter-spacing: -1px;
+        }
+
+        label {
+            font-weight: 500;
+            margin-bottom: 7px;
+            display: block;
+        }
+        select, input[type="text"], input[type="file"] {
+            width: 100%;
+            font-family: inherit;
+            font-size: 1rem;
+            padding: 11px;
+            border-radius: var(--border-radius);
+            border: 1.5px solid #dbeafe;
+            margin-bottom: 17px;
+            background: #f5f9ff;
+            outline: none;
+            transition: border 0.2s;
+        }
+        select:focus, input[type="text"]:focus, input[type="file"]:focus {
+            border: 1.5px solid var(--primary);
+        }
+
+        .options-row {
+            display: flex;
+            gap: 32px;
+            flex-wrap: wrap;
+            margin-bottom: 14px;
+        }
+        .option-block {
+            flex: 1 1 400px;
+            background: var(--accent);
+            border-radius: var(--border-radius);
+            box-shadow: 0 1px 9px rgba(0,32,128,0.06);
+            padding: 29px 29px 20px 29px;
+        }
+        .option-block h2 {
+            font-size: 1.55rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+        }
+        .btn-primary, .btn-danger {
+            display: inline-flex;
+            align-items: center;
+            font-weight: 600;
+            border: none;
+            border-radius: var(--border-radius);
+            cursor: pointer;
+            font-size: 1.07rem;
+            padding: 11px 34px;
+            transition: background 0.2s;
+            box-shadow: 0 2px 6px rgba(0,32,128,0.08);
+        }
+        .btn-primary {background: var(--primary); color:#fff;}
+        .btn-primary:hover {background:#0036cc;}
+        .btn-danger {background: var(--danger); color:#fff;}
+        .btn-danger:hover {background:#cc0045;}
+
+        .result {
+            margin-top: 13px;
+            font-size: 1.07rem;
+            padding:12px;
+            background: #e0fafd;
+            border-radius:var(--border-radius);
+            color:#1f4e4f;
+            box-shadow:0 1px 4px rgba(13,180,157,.07);
+        }
+
+        .user-list {
+            list-style: none;
+            padding: 0;
+            margin: 10px 0;
+        }
+        .user-list li {
+            padding: 8px 12px;
+            background: #f5f9ff;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            border-left: 4px solid #0040ff;
+        }
+        .user-list li.presente {
+            border-left-color: #ff0059;
+        }
+
+        @media(max-width:850px){
+            .dashboard-container {padding:24px;}
+            .header-flex {flex-direction: column; gap:12px;}
+            .options-row {flex-direction: column; gap:19px;}
+        }
+        @media(max-width:570px){
+            .dashboard-container {padding:7px;}
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <div class="header-flex">
+            <h1>
+                <i class="bi bi-shield-check" style="color:var(--primary);font-size:2.25rem;vertical-align:-4px;margin-right:10px;"></i>
+                Dashboard de Banear Usuarios
+            </h1>
+            <div style="min-width:250px">
+                <label for="server">Seleccionar servidor</label>
+                <select id="server">
+                    <option value="">- Selecciona -</option>
+                </select>
+            </div>
+        </div>
+        <div class="options-row">
+            <div class="option-block">
+                <h2>
+                    <i class="bi bi-file-earmark-text" style="color:var(--primary);"></i>
+                    Cargar JSON para Banear
+                </h2>
+                <label for="json">Sube el archivo JSON:</label>
+                <input type="file" id="json" accept=".json">
+                <button class="btn-danger" onclick="verificarUsuarios()">
+                    <i class="bi bi-eye"></i> Verificar usuarios
+                </button>
+                <ul id="userList" class="user-list"></ul>
+                <button class="btn-danger" onclick="banearJson()">
+                    <i class="bi bi-ban"></i> Banear
+                </button>
+                <div id="jsonResult" class="result" style="display:none"></div>
+            </div>
+            <div class="option-block">
+                <h2>
+                    <i class="bi bi-person-x" style="color:var(--danger);"></i>
+                    Banear Manualmente
+                </h2>
+                <label for="user">Banear por ID o @usuario:</label>
+                <input type="text" id="user" placeholder="Ingresa ID o @usuario">
+                <button class="btn-primary" onclick="banearManual()">
+                    <i class="bi bi-person-dash"></i> Banear
+                </button>
+                <div id="manualResult" class="result" style="display:none"></div>
+            </div>
+        </div>
+    </div>
+    <script>
+        const sessionKey = new URLSearchParams(window.location.search).get('key');
+
+        function cargarServidores() {
+            fetch("/api/servidores")
+                .then(r => r.json())
+                .then(servidores => {
+                    const select = document.getElementById('server');
+                    select.innerHTML = '<option value="">- Selecciona -</option>';
+                    servidores.forEach(s => {
+                        select.innerHTML += `<option value="${s.id}">${s.name}</option>`;
+                    });
+                });
+        }
+
+        function verificarUsuarios() {
+            const jsonFile = document.getElementById('json').files[0];
+            const serverId = document.getElementById('server').value;
+            if (!jsonFile) {
+                alert('Por favor, sube un archivo JSON.');
+                return;
+            }
+            if (!serverId) {
+                alert('Selecciona un servidor.');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                try {
+                    const users = JSON.parse(evt.target.result);
+                    fetch("/api/verificar_usuarios", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            key: sessionKey,
+                            server_id: serverId,
+                            users
+                        })
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        const list = document.getElementById("userList");
+                        list.innerHTML = "";
+                        data.forEach(user => {
+                            const li = document.createElement("li");
+                            li.textContent = `${user.username} (${user.id}) ${user.status === "presente" ? "⚠️ está en el servidor" : ""}`;
+                            if (user.status === "presente") li.classList.add("presente");
+                            list.appendChild(li);
+                        });
+                    });
+                } catch(e) {
+                    alert('JSON malformado: ' + e);
+                }
+            };
+            reader.readAsText(jsonFile);
+        }
+
+        function banearJson() {
+            const jsonFile = document.getElementById('json').files[0];
+            const serverId = document.getElementById('server').value;
+            if (!jsonFile) {
+                alert('Por favor, sube un archivo JSON.');
+                return;
+            }
+            if (!serverId) {
+                alert('Selecciona un servidor.');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                try {
+                    const users = JSON.parse(evt.target.result);
+                    fetch("/api/banear_json", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            key: sessionKey,
+                            server_id: serverId,
+                            users
+                        })
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        const el = document.getElementById("jsonResult");
+                        el.style.display = "block";
+                        el.textContent = data.error ? "❌ " + data.error : "✅ " + data.message;
+                    });
+                } catch(e) {
+                    alert('JSON malformado: ' + e);
+                }
+            };
+            reader.readAsText(jsonFile);
+        }
+
+        function banearManual() {
+            const user = document.getElementById('user').value.trim();
+            const serverId = document.getElementById('server').value;
+            if (!user) {
+                alert('Por favor, ingresa un ID o @usuario.');
+                return;
+            }
+            if (!serverId) {
+                alert('Selecciona un servidor.');
+                return;
+            }
+            fetch("/api/banear_manual", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    key: sessionKey,
+                    server_id: serverId,
+                    user
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                const el = document.getElementById("manualResult");
+                el.style.display = "block";
+                el.textContent = data.error ? "❌ " + data.error : "✅ " + data.message;
+            });
+        }
+
+        window.onload = cargarServidores;
+    </script>
+</body>
+</html>
